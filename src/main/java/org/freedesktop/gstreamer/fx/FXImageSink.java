@@ -78,7 +78,7 @@ public class FXImageSink {
     }
 
     /**
-     * Create and FXImageSink wrapping the provided AppSink element.
+     * Create an FXImageSink wrapping the provided AppSink element.
      *
      * @param sink AppSink element
      */
