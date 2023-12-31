@@ -1,23 +1,25 @@
 /*
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS HEADER.
- * 
+ *
  * Copyright 2019 Neil C Smith.
- * 
+ *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License version 3 only, as
  * published by the Free Software Foundation.
- * 
+ *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
  * version 3 for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public License version 3
  * along with this work; if not, see http://www.gnu.org/licenses/
  *
  */
 package org.freedesktop.gstreamer.fx;
 
+import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -48,6 +50,17 @@ public class FXImageSink {
 
     private final static String DEFAULT_CAPS;
 
+    /**
+     * JavaFX has no handle to notify when it no longer needs a sample, and
+     * unfortunately this isn't reliably after it's processed a single sample.
+     *If JavaFX tries to access a sample after it's been disposed, it causes a
+     * native crash. From testing, the most reliable way of avoiding these native
+     * crashes seems to be to keep a fixed-size buffer of older frames still
+     * accessible. The size of this buffer can be increased by adjusting this
+     * constant.
+     */
+    private final static int OLD_SAMPLE_BUFFER_SIZE = 2;
+
     static {
         if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN) {
             DEFAULT_CAPS = "video/x-raw, format=BGRx";
@@ -62,6 +75,7 @@ public class FXImageSink {
     private final NewSampleListener newSampleListener;
     private final NewPrerollListener newPrerollListener;
 
+    private final Queue<Sample> oldSamples;
     private Sample activeSample;
     private Buffer activeBuffer;
 
@@ -84,6 +98,7 @@ public class FXImageSink {
      */
     public FXImageSink(AppSink sink) {
         this.sink = sink;
+        oldSamples = new ArrayBlockingQueue<>(OLD_SAMPLE_BUFFER_SIZE + 1);
         sink.set("emit-signals", true);
         newSampleListener = new NewSampleListener();
         newPrerollListener = new NewPrerollListener();
@@ -201,11 +216,12 @@ public class FXImageSink {
         WritableImage img = new WritableImage(pixelBuffer);
         image.set(img);
 
+        if (oldSample != null) oldSamples.add(oldSample);
         if (oldBuffer != null) {
             oldBuffer.unmap();
         }
-        if (oldSample != null) {
-            oldSample.dispose();
+        while (oldSamples.size() > OLD_SAMPLE_BUFFER_SIZE) {
+            oldSamples.remove().dispose();
         }
 
     }
